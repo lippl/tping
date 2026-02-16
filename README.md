@@ -1,5 +1,7 @@
-# tping.sh
-simple bash script, known as "timestamp-ping", pinging continously in background, only showing status-change (up/down) of destination host
+# tping
+Simple "timestamp-ping" tool, pinging continuously in background, only showing status-change (up/down) of destination host.
+
+Available for **Linux/macOS** (`tping.sh`) and **Windows** (`tping.ps1`).
 
 ## Motivation
 As a network engineer, i needed a simple tool, to monitor an availability of a target IP-address. When using "ping xyz", you get a new line entry, every ping-interval, showing the actual RTT
@@ -29,9 +31,9 @@ If you use tping script, you only get one line per status-change. You have to re
 - ~~What you lose, is the continous reading of the RTT (you only get the first one)~~ integrated since tping 6.1
 - What you win is a clear, timestamped view when and how long a target host went off or online
 
-## Installation
+## Installation (Linux/macOS)
 - download latest release
-- copy tping.sh to your linux machine
+- copy tping.sh to your machine
 - make script executable
 
         schwupp@linux:~$ chmod +x tping.sh
@@ -43,17 +45,45 @@ If you use tping script, you only get one line per status-change. You have to re
 - ping your first target with IP or Hostname
 
         schwupp@linux:~$ tping.sh 8.8.8.8
+
+## Windows (PowerShell)
+
+The PowerShell version (`tping.ps1`) provides the same features as the bash script on Windows.
+
+### Installation
+- Download the latest release or clone the repository
+- Copy `tping.ps1` to your Windows machine
+- Run with PowerShell 5.1 or later
+- If scripts are blocked, run: `Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser`
+
+### Usage
+```powershell
+.\tping.ps1 8.8.8.8
+.\tping.ps1 -IPv4  google.com
+```
+
+### Example output
+```
+2026-02-16 14:43:20 | host 127.0.0.1 (127.0.0.1) is ok | RTT <1ms
+2026-02-16 14:43:25 | host 127.0.0.1 (127.0.0.1) is down [ok for 5 sec]
+--- 127.0.0.1 (127.0.0.1) tping statistics ---
+flapped 1 times, was up for 5 sec and down for 0 sec
+10 packets transmitted, 5 packets received, 50% packet loss
+round-trip min/avg/max = 0.5/0.5/1 ms
+```
+
+Press **Ctrl+C** to stop and display statistics.
         
-## Additional Parameters/Features
-#### debug/verbose output (-d)
-print some verbose output with -d switch
-#### deadtime (-W \<seconds\>)
-Specify timeout of ping in seconds, simply passed to wrapped ping command
-#### interval (-i \<seconds\>)
-Specify interval of backgroung-pings. **Not** depending on wrapped ping command. Default 1 second.
-#### fuzzy-logic (-f \<# of pings\>)
-Number of pings that may fail, but still keep target status "up". Target will go "down" after #+1 failed pings. Useful to set >0 on unrealiable networks like cellular, where packetloss is expected. Default 0, so target goes "down" after the 0+1 = first failed ping.
-#### static legacy mode (-s)
-Version 6.0 introduced a dynamic "follow-mode" as default, which allows to see rtt of every single ping command. Before 6.0 you could only see the rtt when state changes occured. Those working with tping sice the beginning might got used to the fact, that the tping-output-line is always completely frozen and if you see something change, it means that your ping-host got lost and your adrenalin-level will rise immediately. For preventing network-admin heart-attacks because of the new dynamic output - use this parameter.
-#### AAAA DNS Support
-Since v3.1 tping defaults to IPv6 (AAAA) records when resolving DNS. When AAAA-record is unavailable, tping falls back to IPv4 A-record. If you want to disable this (i.e. IPv6 is not running, script should not waste time with it), you can temporarily use "-4" switch with each command or permanently set "ipv=4" instead of "ipv=6" in preamble of the script.
+## Parameters
+
+| Parameter | Linux/macOS | Windows | Description |
+|-----------|--------------|---------|-------------|
+| Target | positional | `-Target` (positional) | Target IP or hostname |
+| Deadtime | `-W <sec>` | `-Deadtime` / `-W` | Ping timeout in seconds (default: 1) |
+| Interval | `-i <sec>` | `-Interval` / `-i` | Seconds between pings (default: 1) |
+| Fuzzy | `-f <#>` | `-Fuzzy` / `-f` | Failed pings before marking down; 0 disables (default: 0). Target goes "down" after #+1 failed pings. Useful on unreliable networks (e.g. cellular). |
+| Static mode | `-s` | `-Static` / `-s` | Legacy mode without live RTT updates when up. Output line stays frozen until state change. |
+| IPv4 only | `-4` | `-IPv4` | IPv4-only DNS lookup (default: IPv6 with fallback to IPv4) |
+| Debug | `-d` | `-DebugMode` / `-d` | Verbose debug output |
+| Version | `-v` | `-Version` / `-v` | Show version |
+| Help | `-h` | `-Help` / `-h` | Show usage |
