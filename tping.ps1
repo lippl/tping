@@ -6,6 +6,7 @@
 .DESCRIPTION
     PowerShell port of tping.sh with identical featureset, functionality and argument handling.
     v6.3 - matches tping.sh v6.3
+    Uses Test-Connection cmdlet (locale-independent .NET objects, no ping.exe output parsing).
 
 .PARAMETER Target
     Target IP address or DNS name to ping
@@ -88,7 +89,6 @@ $script:lastuptime = 0
 $script:lastdowntime = 0
 $script:flap = 0
 $script:rtt = @($null) * 10  # statint slots
-$script:rtt_sum = 0.0
 $script:rtt_min = $null
 $script:rtt_max = 0.0
 $script:rtt_avg = 0.0
@@ -129,7 +129,7 @@ function Get-DisplayTime {
 
 function Get-IPv4Address {
     param([string]$InputString)
-    $pattern = '^([0-9]{1,3}\.){3}[0-9]{1,3}$'
+    $pattern = '^(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)$'
     $InputString -match $pattern
 }
 
@@ -156,16 +156,34 @@ function Get-IPv6Address {
 }
 
 function Invoke-CalcStatistics {
+    # Match bash logic: accumulate across intervals using running average (tping.sh line 148-168)
     $validRtt = $script:rtt | Where-Object { $null -ne $_ }
     if ($validRtt.Count -lt 2) { return }
+
+    # Batch-level aggregation for this statistics interval
+    $batchSum = 0.0
+    $batchCount = 0
     foreach ($t in $validRtt) {
         $val = if ($t -eq '<1') { 0.5 } else { [double]$t }
         if ($null -eq $script:rtt_min -or $val -lt $script:rtt_min) { $script:rtt_min = $val }
         if ($val -gt $script:rtt_max) { $script:rtt_max = $val }
-        $script:rtt_sum += $val
+        $batchSum += $val
+        $batchCount++
     }
-    $script:rtt_avg = $script:rtt_sum / $script:received
-    # Clear batch for next cycle (keep array, reset values)
+    if ($batchCount -eq 0) { return }
+    # Initialize cumulative aggregation variables on first use
+    if ($null -eq $script:rtt_totalSum)   { $script:rtt_totalSum   = 0.0 }
+    if ($null -eq $script:rtt_totalCount) { $script:rtt_totalCount = 0 }
+    # Accumulate batch into global totals to match bash running-average behavior
+    $script:rtt_totalSum   += $batchSum
+    $script:rtt_totalCount += $batchCount
+    # Keep rtt_sum aligned with the cumulative sum for any existing consumers
+    $script:rtt_sum = $script:rtt_totalSum
+    # Compute average using all RTT samples seen so far
+    if ($script:rtt_totalCount -gt 0) {
+        $script:rtt_avg = $script:rtt_totalSum / $script:rtt_totalCount
+    }
+    # Clear batch for next cycle
     for ($i = 0; $i -lt $script:statint; $i++) { $script:rtt[$i] = $null }
 }
 
@@ -206,7 +224,7 @@ try {
     if ([Environment]::UserInteractive) {
         [Console]::TreatControlCAsInput = $false
         [Console]::CancelKeyPress.Add({
-            param($sender, $e)
+            param($eventSender, $e)
             $e.Cancel = $true
             Write-PrintStatistics
         })
@@ -270,25 +288,35 @@ if (Get-IPv4Address -InputString $script:targetHost) {
     $script:ip = $hostdigs[0]
 }
 
-# --- Build ping command ---
-# Windows ping: /n 1 = count, /w = timeout in ms
-$deadtimeMs = $script:deadtime * 1000
-$pingArgs = @("/n", "1", "/w", $deadtimeMs)
-if ($script:ipv -eq 6) {
-    $pingArgs = @("/6") + $pingArgs
+# --- Build Test-Connection params (locale-independent, uses .NET objects) ---
+# PS 5.1: -ComputerName, Win32_PingStatus (ResponseTime, StatusCode); no -IPv4/-IPv6, no -TimeoutSeconds
+# PS 6+:  -TargetName, PingStatus (Latency/ResponseTime, Status); -IPv4/-IPv6, -TimeoutSeconds
+$targetParam = if ((Get-Command Test-Connection).Parameters['TargetName']) { 'TargetName' } else { 'ComputerName' }
+$script:tcParams = @{
+    $targetParam = $script:ip
+    Count        = 1
 }
-$pingArgs += $script:ip
+if ((Get-Command Test-Connection).Parameters['IPv4']) {
+    if ($script:ipv -eq 6) { $script:tcParams['IPv6'] = $true } else { $script:tcParams['IPv4'] = $true }
+}
+if ((Get-Command Test-Connection).Parameters['TimeoutSeconds']) {
+    $script:tcParams['TimeoutSeconds'] = $script:deadtime
+    $script:effectiveDeadtime = $script:deadtime
+} else {
+    $script:effectiveDeadtime = 4  # PS 5.1 Win32_PingStatus default
+}
 
 if ($script:debug) {
     Write-Host "`t####### DEBUG #######"
-    Write-Host "`targs = [ $($args.Count) ]"
+    Write-Host "`targs = [ $($PSBoundParameters.Count) ]"
     Write-Host "`tdeadtime  = [ $($script:deadtime) ]"
     Write-Host "`tinterval = [ $($script:interval) ]"
     Write-Host "`tfuzzy = [ $($script:fuzzy_limit) ]"
     Write-Host "`tfollow = [ $($script:follow) ]"
     Write-Host "`thost = [ $($script:targetHost) ]"
     Write-Host "`tip = [ $($script:ip) ]"
-    Write-Host "`tping args = [ $($pingArgs -join ' ') ]"
+    $tcStr = ($script:tcParams.GetEnumerator() | ForEach-Object { "-$($_.Key) $($_.Value)" }) -join ' '
+    Write-Host "`tTest-Connection params = [ $tcStr ]"
     Write-Host "`t####### DEBUG #######"
 }
 
@@ -306,12 +334,24 @@ $script:mainLoopStarted = $true
 try {
 while ($true) {
     $script:transmitted++
-    $pingOutput = & ping.exe $pingArgs 2>&1 | Out-String
-    # Windows ping: "time=101ms" or "time<1ms" (sub-millisecond)
-    $success = $pingOutput -match 'time[=:<](\d+(?:\.\d+)?)?\s*ms'
-    $rttVal = if ($success) {
-        if ($Matches[1]) { $Matches[1] } else { '<1' }
-    } else { $null }
+    $success = $false
+    $rttVal = $null
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
+    try {
+        $result = @(Test-Connection @script:tcParams -ErrorAction Stop)[0]
+        # PS 5.1 Win32_PingStatus: ResponseTime, StatusCode (0=success)
+        # PS 6+ PingStatus: Latency/ResponseTime, Status ('Success')
+        $isSuccess = if ($null -ne $result.Status) { $result.Status -eq 'Success' } else { $result.StatusCode -eq 0 }
+        if ($result -and $isSuccess) {
+            $rttMs = if ($null -ne $result.Latency) { $result.Latency } elseif ($null -ne $result.ResponseTime) { $result.ResponseTime } else { 0 }
+            $success = $true
+            $rttVal = if ($rttMs -eq 0) { '<1' } else { [string]$rttMs }
+        }
+    } catch {
+        # Connection failed or timed out
+    } finally {
+        $sw.Stop()
+    }
 
     if (-not $success) {
         $script:fuzzy_cnt++
@@ -343,6 +383,10 @@ while ($true) {
             if ($script:fuzzy_cnt -eq 1) {
                 Write-Host -NoNewline " --FUZZY--"
             }
+        }
+        # Sleep only on instant errors (e.g. host unreachable); timeout already waited deadtime
+        if ($sw.Elapsed.TotalSeconds -lt ($script:effectiveDeadtime * 0.8)) {
+            Start-Sleep -Seconds $script:interval
         }
     } else {
         $script:received++

@@ -59,7 +59,7 @@ The PowerShell version (`tping.ps1`) provides the same features as the bash scri
 ### Usage
 ```powershell
 .\tping.ps1 8.8.8.8
-.\tping.ps1 -IPv4  google.com
+.\tping.ps1 -IPv4 google.com
 ```
 
 ### Example output
