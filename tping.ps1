@@ -94,10 +94,12 @@ $script:rtt_max = 0.0
 $script:rtt_avg = 0.0
 
 # Colors (ANSI escape codes, work in Windows 10+)
-$script:RED = "`e[0;31m"
-$script:GREEN = "`e[0;32m"
-$script:YELLOW = "`e[0;33m"
-$script:RESET = "`e[0m"
+# PS 5.1: `e not supported; use [char]27 for ESC
+$ESC = [char]27
+$script:RED = "$ESC[0;31m"
+$script:GREEN = "$ESC[0;32m"
+$script:YELLOW = "$ESC[0;33m"
+$script:RESET = "$ESC[0m"
 
 function Write-Usage {
     Write-Host @"
@@ -157,7 +159,7 @@ function Get-IPv6Address {
 
 function Invoke-CalcStatistics {
     # Match bash logic: accumulate across intervals using running average (tping.sh line 148-168)
-    $validRtt = $script:rtt | Where-Object { $null -ne $_ }
+    $validRtt = @($script:rtt | Where-Object { $null -ne $_ })
     if ($validRtt.Count -lt 2) { return }
 
     # Batch-level aggregation for this statistics interval
@@ -327,8 +329,8 @@ if ($script:fuzzy_limit -gt 0) {
 }
 
 # --- Main ping loop ---
-# Save cursor position (ANSI: \e[s)
-Write-Host -NoNewline "`e[s"
+# Save cursor position (ANSI: ESC[s)
+Write-Host -NoNewline "$ESC[s"
 
 $script:mainLoopStarted = $true
 try {
@@ -358,24 +360,24 @@ while ($true) {
         if ($script:fuzzy_cnt -gt $script:fuzzy_limit) {
             if ($script:health -eq 2) {
                 $script:lastdowntime = [int][double]::Parse((Get-Date -UFormat %s))
-                Write-Host -NoNewline "`e[u`e[K"
+                Write-Host -NoNewline "$ESC[u$ESC[K"
                 if ($script:debug) { Write-Host -NoNewline "debug:STD;result=fail;health=$($script:health) " }
                 Write-Host "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') | host $($script:targetHost) ($($script:targetHostdig)) is $($script:RED)down$($script:RESET)"
-                Write-Host -NoNewline "`e[s"
+                Write-Host -NoNewline "$ESC[s"
                 $script:health = 0
             } elseif ($script:health -eq 1) {
                 $script:lastdowntime = [int][double]::Parse((Get-Date -UFormat %s))
                 $script:upsec = [int][double]::Parse((Get-Date -UFormat %s)) - $script:lastuptime
                 $script:uptotal += $script:upsec
                 $script:flap++
-                Write-Host -NoNewline "`e[u`e[K"
+                Write-Host -NoNewline "$ESC[u$ESC[K"
                 if ($script:debug) { Write-Host -NoNewline "debug:UTD;result=fail;health=$($script:health) " }
                 Write-Host "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') | host $($script:targetHost) ($($script:targetHostdig)) is $($script:RED)down$($script:RESET) [ok for $(Get-DisplayTime $script:upsec)]"
-                Write-Host -NoNewline "`e[s"
+                Write-Host -NoNewline "$ESC[s"
                 $script:health = 0
             } elseif ($script:health -eq 0 -and $script:follow -eq $true) {
                 $script:downsec = [int][double]::Parse((Get-Date -UFormat %s)) - $script:lastdowntime
-                Write-Host -NoNewline "`e[u`e[K"
+                Write-Host -NoNewline "$ESC[u$ESC[K"
                 if ($script:debug) { Write-Host -NoNewline "debug:DTD;result=fail;health=$($script:health) " }
                 Write-Host -NoNewline "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') | host $($script:targetHost) ($($script:targetHostdig)) is $($script:RED)down$($script:RESET) for $(Get-DisplayTime $script:downsec)"
             }
@@ -396,24 +398,24 @@ while ($true) {
 
         if ($script:health -eq 2) {
             $script:lastuptime = [int][double]::Parse((Get-Date -UFormat %s))
-            Write-Host -NoNewline "`e[u`e[K"
+            Write-Host -NoNewline "$ESC[u$ESC[K"
             if ($script:debug) { Write-Host -NoNewline "debug:STU;result=ok;health=$($script:health) " }
             Write-Host "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') | host $($script:targetHost) ($($script:targetHostdig)) is $($script:GREEN)ok$($script:RESET) | RTT ${rttVal}ms"
-            Write-Host -NoNewline "`e[s"
+            Write-Host -NoNewline "$ESC[s"
             $script:health = 1
         } elseif ($script:health -eq 0) {
-            Write-Host -NoNewline "`e[u`e[K"
+            Write-Host -NoNewline "$ESC[u$ESC[K"
             $script:downsec = [int][double]::Parse((Get-Date -UFormat %s)) - $script:lastdowntime
             $script:downtotal += $script:downsec
             $script:flap++
             if ($script:debug) { Write-Host -NoNewline "debug:DTU;result=ok;health=$($script:health) " }
             Write-Host "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') | host $($script:targetHost) ($($script:targetHostdig)) is $($script:GREEN)ok$($script:RESET) [down for $(Get-DisplayTime $script:downsec)] | RTT ${rttVal}ms"
-            Write-Host -NoNewline "`e[s"
+            Write-Host -NoNewline "$ESC[s"
             $script:lastuptime = [int][double]::Parse((Get-Date -UFormat %s))
             $script:health = 1
         } elseif ($script:health -eq 1 -and $script:follow -eq $true) {
             $script:upsec = [int][double]::Parse((Get-Date -UFormat %s)) - $script:lastuptime
-            Write-Host -NoNewline "`e[u`e[K"
+            Write-Host -NoNewline "$ESC[u$ESC[K"
             if ($script:debug) { Write-Host -NoNewline "debug:UTU;result=ok;health=$($script:health) " }
             Write-Host -NoNewline "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') | host $($script:targetHost) ($($script:targetHostdig)) is $($script:GREEN)ok$($script:RESET) for $(Get-DisplayTime $script:upsec) | RTT ${rttVal}ms"
         }
