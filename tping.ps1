@@ -269,7 +269,7 @@ if (Get-IPv4Address -InputString $script:targetHost) {
         if ($hostdigs.Count -gt 1) {
             Write-Host "$($script:YELLOW)Warning: $($script:targetHost) has multiple IPv6 addresses ($($hostdigs -join ', ')) - using first one.$($script:RESET)"
         }
-        if ($hostdigs.Count -eq 0) {
+        if (!$hostdigs[0]) {
             Write-Host "$($script:YELLOW)Warning: No v6 DNS for $($script:targetHost) - trying v4 DNS...$($script:RESET)"
             $script:ipv = 4
         }
@@ -281,7 +281,7 @@ if (Get-IPv4Address -InputString $script:targetHost) {
         if ($hostdigs.Count -gt 1) {
             Write-Host "$($script:YELLOW)Warning: $($script:targetHost) has multiple IPv4 addresses ($($hostdigs -join ', ')) - using first one.$($script:RESET)"
         }
-        if ($hostdigs.Count -eq 0) {
+        if (!$hostdigs[0]) {
             Write-Host "$($script:RED)Error: No v4 DNS for $($script:targetHost) - exiting now.$($script:RESET)"
             exit 1
         }
