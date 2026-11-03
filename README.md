@@ -87,3 +87,61 @@ Press **Ctrl+C** to stop and display statistics.
 | Debug | `-d` | `-DebugMode` / `-d` | Verbose debug output |
 | Version | `-v` | `-Version` / `-v` | Show version |
 | Help | `-h` | `-Help` / `-h` | Show usage |
+
+## HTTP probing
+
+The repository also includes continuous HTTP(S) probes:
+
+- `httping.sh` for Linux/macOS and other Bash environments
+- `httping.ps1` for Windows PowerShell 5.1 or later
+
+Both scripts repeatedly request a URL and report whether it is reachable with
+HTTP status `200`. The expected response text can be checked with `-t`.
+HTTPS is used by default; pass `-u` to use unencrypted HTTP instead. The
+current `ok`, `missing`, or `down` status is updated in place rather than
+printing a new line on every probe. A new line is printed when the status
+changes.
+Response times are displayed as whole milliseconds, for example `254ms`.
+The final statistics include separate minimum, average, and maximum response
+times for `ok` and `missing` checks. Failed/down checks do not track or display
+response times.
+
+### HTTP probing examples
+
+```bash
+./httping.sh https://example.com
+./httping.sh -t "Welcome" https://example.com
+./httping.sh -u -P 8080 -t "FindMe" example.com
+```
+
+```powershell
+.\httping.ps1 https://example.com
+.\httping.ps1 -t "Welcome" https://example.com
+.\httping.ps1 -u -P 8080 -t "FindMe" example.com
+```
+
+The probes have three runtime states:
+
+- **ok** (green): the request returned HTTP `200` and the expected text was
+  found, or no text check was requested.
+- **missing** (orange): the request returned HTTP `200`, but the expected text
+  was not found.
+- **down** (red): the request failed or returned a non-`200` status.
+
+The `missing` state includes `response misses 'text'`; a successful text check
+includes `response contains 'text'`.
+
+### HTTP probe parameters
+
+| Parameter | Description |
+|-----------|-------------|
+| URL | Target URL or hostname. HTTPS is used by default for hostnames. |
+| `-u` | Use HTTP instead of HTTPS. |
+| `-P <port>` | Override the destination port; accepts a number, `http`, or `https`. |
+| `-t <text>` | Require the specified text in the response body. |
+| `-W <sec>` | HTTP timeout in seconds (default: 5). |
+| `-i <sec>` | Seconds between checks (default: 5). |
+| `-f <#>` | Failed checks before marking down; `0` disables fuzzy detection. |
+| `-d` | Enable debug output. |
+| `-v` | Show version. |
+| `-h` | Show usage. |
